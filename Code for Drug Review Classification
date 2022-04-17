@@ -1,0 +1,311 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import sklearn
+import seaborn as sns
+import nltk
+import re
+import string
+from string import digits
+from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer, PorterStemmer
+
+from sklearn.decomposition import NMF
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.pipeline import make_pipeline
+from matplotlib.pyplot import figure
+from sklearn.feature_extraction.text import CountVectorizer , TfidfTransformer , TfidfVectorizer
+
+df_train=pd.read_csv('drugsComTrain_raw.tsv',sep='\t')
+df_test=pd.read_csv('drugsComTest_raw.tsv',sep='\t')
+
+df_train.drop(['Unnamed: 0', 'drugName','condition','date','usefulCount'], inplace = True,axis = 1)
+df_test.drop(['Unnamed: 0', 'drugName','condition','date','usefulCount'], inplace = True , axis = 1)
+
+
+df_train['review'] = df_train['review'].astype(str)
+
+stop = set(nltk.corpus.stopwords.words('english'))
+stop_words = stop.union({'said','mr','known','ll','ms','ve', 'you', 'your', 'yet' , 'yes',
+                             'yours',"ha", "thi", "now", "onli", "im", "becaus", "wa", "will",
+                              "even", "go", "realli", "didnt", "abl",
+                        'year'}) ###IMPORTANT######################################################
+
+
+def cleaning(x):
+    
+    # converting to words
+    tokens = word_tokenize(x)
+    
+    # convert to lower case
+    words = [w.lower() for w in tokens]
+    
+    # removing alphanumerics
+    words = [word for word in words if word.isalpha()]
+    
+    # removing punctuations
+    table = str.maketrans('', '', string.punctuation)
+    stripped = [w.translate(table) for w in words]    
+        
+    # removing stopwords after modification
+    words_mod = [w for w in stripped if not w in stop_words]
+    
+    # word stemming
+    stemmer = PorterStemmer()
+    stemmed_words = [stemmer.stem(w) for w in words_mod]
+    
+    # word lemmatization
+    lemmatizer = WordNetLemmatizer()
+    sentence = " ".join([lemmatizer.lemmatize(w) for w in stemmed_words]) 
+    
+    sen = " ".join(sentence.split())
+    
+    return (sen)
+    
+    
+train_text = df_train.review.apply(lambda x: cleaning(x))
+
+## ngram set to 1
+vector = TfidfVectorizer( min_df = 50, ngram_range = (1,1),  stop_words='english')
+word_vec = vector.fit_transform(train_text)
+
+word_df = pd.DataFrame([vector.vocabulary_]).T
+word_df.columns = ['count']
+word_df.sort_values(by = 'count' , inplace = True ,ascending=False)
+
+word_df.head(10).plot(kind = 'barh', figsize = (10,10))
+plt.title('N-gram = 1')
+
+# n-gram set to 2
+vector = TfidfVectorizer( min_df = 50, ngram_range = (2,2))
+word_vec = vector.fit_transform(train_text)
+
+word_df = pd.DataFrame([vector.vocabulary_]).T
+word_df.columns = ['count']
+word_df.sort_values(by = 'count' , inplace = True ,ascending=False)
+
+word_df.head(10).plot(kind = 'barh', figsize = (10,10))
+plt.title('N-gram = 2')
+
+# n-gram set to 3
+vector = TfidfVectorizer( min_df = 50, ngram_range = (3,3))
+word_vec = vector.fit_transform(train_text)
+
+word_df = pd.DataFrame([vector.vocabulary_]).T
+word_df.columns = ['count']
+word_df.sort_values(by = 'count' , inplace = True ,ascending=False)
+
+word_df.head(10).plot(kind = 'barh', figsize = (10,10))
+plt.title('N-gram = 3')
+
+df_train.rating.value_counts().plot.pie(figsize = (10,10))
+
+
+df_1 = df_train[df_train['rating'] == 1]
+df_2 = df_train[df_train['rating'] == 2]
+df_3 = df_train[df_train['rating'] == 3]
+df_4 = df_train[df_train['rating'] == 4]
+df_5 = df_train[df_train['rating'] == 5]
+df_6 = df_train[df_train['rating'] == 6]
+df_7 = df_train[df_train['rating'] == 7]
+df_8 = df_train[df_train['rating'] == 8]
+df_9 = df_train[df_train['rating'] == 9]
+df_10 = df_train[df_train['rating'] == 10]
+
+data= [df_1, df_2,df_3,df_4,df_5,df_6,df_7,df_8,df_9,df_10]
+vector = TfidfVectorizer(min_df = 10 , ngram_range = (2,2))
+
+for i in data:
+    clean_data = i.review.apply(lambda x: cleaning(x))
+    word_vec = vector.fit_transform(clean_data)
+
+    word_df = pd.DataFrame([vector.vocabulary_]).T
+    word_df.columns = ['count']
+    word_df.sort_values(by = 'count' , inplace = True ,ascending=False)
+
+    word_df.head(10).plot(kind = 'barh', figsize = (10,10))
+    plt.show()
+
+
+mod_rating = []
+for i in df_train.rating:
+    if i < 5:
+        mod_rating.append(0)
+        
+    elif i > 8:
+        mod_rating.append(2)
+    
+    elif i >= 5 and i <=8:
+        mod_rating.append(1)
+        
+df_train['mod_rating'] = mod_rating
+
+x = df_train.review
+y = df_train.mod_rating
+
+X = x.apply(lambda a: cleaning(a))
+
+X_train , X_test, y_train, y_test = train_test_split(X , y, test_size =0.2, random_state = 10)
+
+
+## Training NMF
+clf = NMF(n_components=3, random_state=2)
+
+vector = TfidfVectorizer( ngram_range = (1,1),  stop_words='english')
+word_vec = vector.fit_transform(df_train.review)
+
+clf.fit(word_vec)
+w = clf.transform(word_vec)
+# h = clf.components_
+
+tp=pd.DataFrame({'id':pd.DataFrame(w).idxmax(axis=1)})
+## Number of categorizations
+
+tp.value_counts()
+
+
+## Training random Forest
+model_rf = make_pipeline(TfidfVectorizer(stop_words='english'), RandomForestClassifier())
+
+model_rf.fit(X_train, y_train)
+
+## training naive Bayes
+
+model_nb = make_pipeline(TfidfVectorizer(stop_words='english'), MultinomialNB())
+
+model_nb.fit(X_train, y_train)
+
+labels_train = model_nb.predict(X_test)
+accuracy_score(y_test , labels_train)
+
+## Assessing models on test dataset after cleaning the test set
+df_test['review'] = df_test['review'].astype(str)
+test_clean = df_test.review.apply(lambda a: cleaning(a))
+
+mod_test_rating = []
+for i in df_test.rating:
+    if i < 5:
+        mod_test_rating.append(0)
+        
+    elif i > 8:
+        mod_test_rating.append(2)
+    
+    elif i >= 5 and i <=8:
+        mod_test_rating.append(1)
+        
+df_test['mod_rating'] = mod_test_rating
+
+acc = []
+# NMF
+word_vec_test = vector.transform(df_test.review)
+w_t = clf.transform(word_vec_test)
+tpt=pd.DataFrame({'id':pd.DataFrame(w_t).idxmax(axis=1)})
+acc.append(accuracy_score(tpt['id'].to_numpy() , df_test['mod_rating']))
+
+# RF
+res_rf = model_rf.predict(test_clean)
+acc.append(accuracy_score(df_test.mod_rating,res_rf))
+
+# NB
+res_nb = model_nb.predict(test_clean)
+acc.append(accuracy_score(df_test.mod_rating , res_nb))
+
+acc
+
+
+## Optimizing NMF
+train_acc = []
+for i in range(60):
+    vector = TfidfVectorizer(stop_words = 'english',min_df = i)
+    word_vec = vector.fit_transform(df_train.review)
+    clf = NMF(init = 'nndsvda',n_components=3, random_state=5)
+    clf.fit(word_vec)
+    w = clf.transform(word_vec)
+#     h = clf.components_
+    tp=pd.DataFrame({'id':pd.DataFrame(w).idxmax(axis=1)})
+    train_acc.append(accuracy_score(tp['id'].to_numpy() , df_train.mod_rating))
+    
+    
+figure(figsize=(8, 6), dpi=80)
+plt.plot(train_acc)
+plt.xlabel("Min Word Occurence")
+plt.ylabel("Accuracy")
+
+vector = TfidfVectorizer( min_df=9, stop_words='english')
+word_vec = vector.fit_transform(train_text)
+
+initial = ["random", "nndsvd", "nndsvda", "nndsvdar"]
+train_score = [[],[],[],[]]
+test_score = [[],[],[],[]]
+beta = ['frobenius', 'kullback-leibler']
+for i in range(len(initial)):
+    for j in beta:
+        if (j == 'kullback-leibler'):
+            clf = NMF(init = initial[i] ,n_components=3, random_state=5 , beta_loss = j, solver = 'mu')
+        else:
+            clf = NMF(init = initial[i] ,n_components=3, random_state=5 , beta_loss = j)
+        clf.fit(word_vec)
+        w = clf.transform(word_vec)
+        h = clf.components_
+
+        tp=pd.DataFrame({'id':pd.DataFrame(w).idxmax(axis=1)})
+
+        train_score[i].append(accuracy_score(tp['id'].to_numpy() , df_train['mod_rating']))
+
+## Converting the result into dataframe for better understanding and depiction
+df = pd.DataFrame(columns = ["Frobenius" , "Kullback_leibler" ],
+             index = ['random' , 'nndsvd' , 'nndsvda' , 'nndsvdar'])
+df = df.T
+df['random'] = [train_score[0][0], train_score[0][1]]
+df['nndsvd'] = [train_score[1][0], train_score[1][1]]
+df['nndsvda'] = [train_score[2][0], train_score[2][1]]
+df['nndsvdar'] = [train_score[3][0], train_score[3][1]]
+
+## Final model NMF after optimization
+joint_df = pd.concat([df_train , df_test])
+joint_df['review'] = joint_df['review'].astype(str)
+
+vector = TfidfVectorizer( min_df = 55 , stop_words='english')
+joint_word_vec = vector.fit_transform(joint_df.review)
+
+clf = NMF(init = 'random' , n_components=3, random_state=2,solver = 'mu' , beta_loss = 'kullback-leibler')
+
+clf.fit(joint_word_vec)
+w = clf.transform(joint_word_vec)
+h = clf.components_
+
+tp=pd.DataFrame({'id':pd.DataFrame(w).idxmax(axis=1)})
+## Number of categorizations
+
+tp.value_counts()
+
+accuracy_score(tp['id'].to_numpy() , joint_df['mod_rating'])
+
+## Summarising the results
+df_comp = pd.DataFrame(columns = ["Training Set" , "test Set" ],
+             index = ['Random Forest' , 'Naive Bayes' , 'NMF'])
+df_comp = df_comp.T
+df_comp['Random Forest'] = [80 , 79]
+df_comp['Naive Bayes'] = [59.6 , 59.6]
+df_comp['NMF'] = [28 , 41]
+
+df_comp.plot(kind = 'bar', rot=5, fontsize=10, figsize=(15,10))
+## Attempting to optimize the random forest model by varying the max_features
+max_feat = [ 'auto', 'sqrt' , 'log2' ]
+
+rf_scores = []
+
+for i in max_feat:
+    model = make_pipeline(TfidfVectorizer(stop_words='english'), RandomForestClassifier(max_features = i))
+
+    model.fit(X_train , y_train)
+    
+    pred = model.predict(X_test)
+    
+    rf_scores.append(accuracy_score(y_test , pred))
+
+       
